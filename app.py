@@ -5,14 +5,13 @@ from pathlib import Path
 
 # PDF Loading
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Embeddings & Vector Store
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain_community.vectorstores import FAISS
 
 # LLM from HuggingFace Hub (free, local inference)
-from langchain_community.llms import HuggingFacePipeline
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
 # Memory & Chain
@@ -20,24 +19,25 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
 
+# ─────────────────────────────────────────────
 # CONFIG
-
+# ─────────────────────────────────────────────
 EMBED_MODEL  = "BAAI/bge-small-en-v1.5"      # Free, fast, good quality (~130MB)
 LLM_MODEL    = "google/flan-t5-base"          # Free, runs on CPU (~250MB)
 CHUNK_SIZE   = 500
 CHUNK_OVERLAP = 50
 TOP_K        = 5
 
-
+# ─────────────────────────────────────────────
 # GLOBAL STATE
-
+# ─────────────────────────────────────────────
 vectorstore  = None
 qa_chain     = None
 chat_history = []
 
-
+# ─────────────────────────────────────────────
 # LOAD EMBEDDING MODEL (cached after first load)
-
+# ─────────────────────────────────────────────
 print("⏳ Loading embedding model...")
 embeddings = HuggingFaceEmbeddings(
     model_name=EMBED_MODEL,
@@ -46,9 +46,9 @@ embeddings = HuggingFaceEmbeddings(
 )
 print("✅ Embedding model loaded.")
 
-
+# ─────────────────────────────────────────────
 # LOAD LLM (flan-t5-base — free, CPU-friendly)
-
+# ─────────────────────────────────────────────
 print("⏳ Loading LLM (flan-t5-base)...")
 tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
 model     = AutoModelForSeq2SeqLM.from_pretrained(LLM_MODEL)
@@ -64,9 +64,9 @@ hf_pipeline = pipeline(
 llm = HuggingFacePipeline(pipeline=hf_pipeline)
 print("✅ LLM loaded.")
 
-
+# ─────────────────────────────────────────────
 # PROMPT TEMPLATE
-
+# ─────────────────────────────────────────────
 PROMPT_TEMPLATE = """You are a helpful assistant that answers questions based on the provided PDF document.
 Use only the context below to answer. If you don't know, say "I don't know based on the document."
 
@@ -85,9 +85,9 @@ QA_PROMPT = PromptTemplate(
     template=PROMPT_TEMPLATE
 )
 
-
+# ─────────────────────────────────────────────
 # PROCESS PDF
-
+# ─────────────────────────────────────────────
 def process_pdf(pdf_file):
     global vectorstore, qa_chain, chat_history
 
@@ -148,8 +148,9 @@ def process_pdf(pdf_file):
         return f"❌ Error processing PDF: {str(e)}", gr.update(interactive=False)
 
 
+# ─────────────────────────────────────────────
 # CHAT FUNCTION
-
+# ─────────────────────────────────────────────
 def chat(user_message, history):
     global qa_chain
 
@@ -193,8 +194,9 @@ def clear_chat():
     return [], ""
 
 
+# ─────────────────────────────────────────────
 # GRADIO UI
-
+# ─────────────────────────────────────────────
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -288,7 +290,7 @@ with gr.Blocks(
     """)
 
     with gr.Row():
-        # LEFT: Upload
+        # ── LEFT: Upload ──────────────────────────────
         with gr.Column(scale=1):
             gr.Markdown("### 📁 Upload PDF")
             pdf_input = gr.File(
@@ -319,7 +321,7 @@ with gr.Blocks(
             - 🔗 LangChain ConversationalRetrievalChain
             """)
 
-        # RIGHT: Chat
+        # ── RIGHT: Chat ───────────────────────────────
         with gr.Column(scale=2):
             gr.Markdown("### 💬 Ask Questions")
             chatbot = gr.Chatbot(
@@ -338,7 +340,7 @@ with gr.Blocks(
                 send_btn  = gr.Button("Send ➤", variant="primary", scale=1)
             clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary", size="sm")
 
-    # EVENTS
+    # ── EVENTS ──────────────────────────────────────
     process_btn.click(
         fn=process_pdf,
         inputs=[pdf_input],
