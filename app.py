@@ -11,13 +11,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 # LLM
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, GenerationConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
 EMBED_MODEL   = "BAAI/bge-small-en-v1.5"
-LLM_MODEL     = "Qwen/Qwen3-0.6B"   # 0.6B — beats TinyLlama 1.1B on instruction-following
+LLM_MODEL     = "Qwen/Qwen3-0.6B"
 CHUNK_SIZE    = 800
 CHUNK_OVERLAP = 100
 TOP_K         = 3
@@ -41,25 +41,23 @@ print("✅ Embeddings ready.")
 
 print("⏳ Loading LLM (Qwen3-0.6B)...")
 tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
-model     = AutoModelForCausalLM.from_pretrained(LLM_MODEL, dtype=torch.float32)
+model     = AutoModelForCausalLM.from_pretrained(LLM_MODEL, torch_dtype=torch.float32)
 
-# Qwen3 recommended non-thinking params (fast, no chain-of-thought overhead)
-# presence_penalty=1.5 is Qwen3's official fix for endless repetition
-gen_config = GenerationConfig(
-    max_new_tokens=200,
-    do_sample=True,
-    temperature=0.7,
-    top_p=0.8,
-    top_k=20,
-    presence_penalty=1.5,  # Qwen3 official anti-repetition param
-)
-
+# FIX: Pass generation params directly to pipeline() instead of using
+# GenerationConfig object — newer transformers creates one internally,
+# causing "multiple values for keyword argument 'generation_config'".
+# Also: presence_penalty is OpenAI-only; use repetition_penalty instead.
 hf_pipe = pipeline(
     "text-generation",
     model=model,
     tokenizer=tokenizer,
     return_full_text=False,
-    generation_config=gen_config,
+    max_new_tokens=200,
+    do_sample=True,
+    temperature=0.7,
+    top_p=0.8,
+    top_k=20,
+    repetition_penalty=1.3,
     device=0 if torch.cuda.is_available() else -1,
 )
 print("✅ LLM ready.")
