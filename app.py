@@ -48,10 +48,9 @@ hf_pipe   = pipeline(
     "text-generation",
     model=model,
     tokenizer=tokenizer,
-    max_new_tokens=512,
-    repetition_penalty=1.15,
     return_full_text=False,
-    device=0 if torch.cuda.is_available() else -1
+    device=0 if torch.cuda.is_available() else -1,
+    model_kwargs={"max_new_tokens": 512, "repetition_penalty": 1.15}
 )
 llm = HuggingFacePipeline(pipeline=hf_pipe)
 print("✅ LLM ready.")
@@ -107,17 +106,8 @@ def process_pdf(pdf_file):
         vectorstore = FAISS.from_documents(chunks, embeddings)
         retriever   = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
 
-        # Build LCEL chain (no deprecated memory/chains)
-        rag_chain = (
-            {
-                "context":      retriever | format_docs,
-                "chat_history": RunnablePassthrough(),
-                "question":     RunnablePassthrough(),
-            }
-            | PROMPT
-            | llm
-            | StrOutputParser()
-        )
+        # Build simple retriever — chain invoked manually in chat()
+        rag_chain = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
 
         return (
             f"✅ PDF processed!\n"
@@ -139,7 +129,8 @@ def chat(user_message, history):
     history = history or []
 
     if rag_chain is None:
-        history.append((user_message, "⚠️ Please upload and process a PDF first."))
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": "⚠️ Please upload and process a PDF first."})
         return history, ""
 
     if not user_message.strip():
@@ -148,17 +139,26 @@ def chat(user_message, history):
     try:
         # Build chat history string from Gradio history list
         history_text = ""
-        for human, assistant in history[-4:]:   # last 4 turns as context
-            history_text += f"Human: {human}\nAssistant: {assistant}\n"
+        # Build from last 4 pairs (8 messages) in messages format
+        msgs = history[-8:] if len(history) >= 2 else []
+        for msg in msgs:
+            role = "Human" if msg["role"] == "user" else "Assistant"
+            history_text += f"{role}: {msg['content']}\n"
 
-        # LCEL chain expects a dict; we pass question and chat_history
-        answer = rag_chain.invoke({
-            "question":     user_message,
-            "chat_history": history_text,
-        })
+        # Retrieve relevant chunks
+        source_docs = rag_chain.invoke(user_message)
+        context_text = "\n\n".join(d.page_content for d in source_docs)
 
-        # Source pages from FAISS retrieval
-        source_docs = vectorstore.similarity_search(user_message, k=TOP_K)
+        # Build prompt string and call LLM directly
+        prompt_text = PROMPT.format(
+            context=context_text,
+            chat_history=history_text,
+            question=user_message
+        )
+        raw = llm.invoke(prompt_text)
+        answer = raw if isinstance(raw, str) else str(raw)
+
+        # Source pages
         pages = sorted(set(
             doc.metadata.get("page", 0) + 1
             for doc in source_docs
@@ -167,11 +167,13 @@ def chat(user_message, history):
         if pages:
             answer += f"\n\n📌 *Sources: Page(s) {', '.join(map(str, pages))}*"
 
-        history.append((user_message, answer))
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": answer})
         return history, ""
 
     except Exception as e:
-        history.append((user_message, f"❌ Error: {str(e)}"))
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
         return history, ""
 
 
@@ -184,44 +186,61 @@ def clear_chat():
 # ─────────────────────────────────────────────
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
-:root {
-    --teal: #0d9488; --teal-light: #14b8a6;
-    --dark: #0f172a; --card: #1e293b;
-    --border: #334155; --text: #e2e8f0; --muted: #94a3b8;
-}
-body, .gradio-container {
-    background: var(--dark) !important;
-    color: var(--text) !important;
-    font-family: 'Inter', sans-serif !important;
-}
-h1, h2, h3 { font-family: 'Space Mono', monospace !important; }
-.upload-box {
-    border: 2px dashed var(--teal) !important;
-    background: rgba(13,148,136,0.05) !important;
-    border-radius: 12px !important;
-}
-.chat-window { border-radius: 12px !important; }
-button.primary { background: var(--teal) !important; border: none !important; font-weight: 600 !important; }
-button.primary:hover { background: var(--teal-light) !important; }
-.status-box {
-    background: var(--card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
+
+.gradio-container { font-family: 'Inter', sans-serif !important; max-width: 1200px !important; }
+
+/* Header & Footer */
+.nielit-header { background: #0f172a; border-bottom: 3px solid #0d9488; }
+.nielit-footer { background: #0f172a; border-top: 2px solid #1e293b; }
+
+/* Upload area */
+.upload-box label { color: #1e293b !important; font-weight: 500 !important; }
+
+/* Status textbox - force dark text on light bg */
+.status-box textarea {
+    background: #f0fdf4 !important;
+    color: #064e3b !important;
     font-family: 'Space Mono', monospace !important;
     font-size: 0.85rem !important;
+    border: 1.5px solid #0d9488 !important;
+    border-radius: 8px !important;
 }
+.status-box label { color: #1e293b !important; font-weight: 600 !important; }
+
+/* Chat input */
+.msg-input textarea {
+    color: #111827 !important;
+    background: #ffffff !important;
+    font-size: 1rem !important;
+}
+.msg-input label { color: #374151 !important; }
+
+/* Markdown text visible */
+.gradio-container .prose { color: #1e293b !important; }
+.gradio-container p, .gradio-container li { color: #374151 !important; }
+.gradio-container strong { color: #111827 !important; }
+.gradio-container code { background: #f1f5f9 !important; color: #0f766e !important; padding: 2px 5px; border-radius: 4px; }
+
+/* Process button */
+.process-btn { background: #0d9488 !important; color: white !important; font-weight: 700 !important; font-size: 1rem !important; }
+.process-btn:hover { background: #0f766e !important; }
+
+/* Send button */
+.send-btn { background: #0d9488 !important; color: white !important; font-weight: 700 !important; }
 """
 
 with gr.Blocks(
     title="📄 PDF Q&A Chatbot — RAG",
     css=CSS,
-    theme=gr.themes.Base(primary_hue="teal", neutral_hue="slate",
-                         font=gr.themes.GoogleFont("Inter"))
+    theme=gr.themes.Soft(
+        primary_hue="teal",
+        neutral_hue="slate",
+        font=gr.themes.GoogleFont("Inter")
+    )
 ) as demo:
 
     gr.HTML("""
-    <div style="background:#1e293b;border-bottom:1px solid #334155;padding:10px 24px;
-                display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div class="nielit-header" style="padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
         <div style="display:flex;align-items:center;gap:14px;">
             <img src="https://www.nielit.gov.in/images/NIELIT_logo.jpg" alt="NIELIT Logo"
                  style="height:52px;border-radius:6px;background:white;padding:3px;"
@@ -240,16 +259,16 @@ with gr.Blocks(
         </div>
     </div>
     <div style="text-align:center;padding:20px 0 8px;">
-        <h1 style="font-family:'Space Mono',monospace;font-size:2rem;color:#14b8a6;margin:0;">
+        <h1 style="font-family:'Space Mono',monospace;font-size:2rem;color:#0d9488;margin:0;">
             📄 PDF Q&amp;A Chatbot
         </h1>
-        <p style="color:#94a3b8;font-size:0.95rem;margin-top:8px;">
+        <p style="color:#475569;font-size:0.95rem;margin-top:8px;">
             Retrieval-Augmented Generation · FAISS · BGE Embeddings · TinyLlama
         </p>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
             <span style="background:#0d9488;color:white;padding:3px 12px;border-radius:20px;font-size:0.8rem;">🆓 100% Free</span>
-            <span style="background:#1e293b;color:#94a3b8;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #334155;">CPU Friendly</span>
-            <span style="background:#1e293b;color:#94a3b8;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #334155;">HuggingFace Spaces</span>
+            <span style="background:#f1f5f9;color:#475569;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #cbd5e1;">CPU Friendly</span>
+            <span style="background:#f1f5f9;color:#475569;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #cbd5e1;">HuggingFace Spaces</span>
         </div>
     </div>
     """)
@@ -259,9 +278,12 @@ with gr.Blocks(
             gr.Markdown("### 📁 Upload PDF")
             pdf_input = gr.File(label="Drop your PDF here", file_types=[".pdf"],
                                 elem_classes=["upload-box"])
-            process_btn = gr.Button("⚡ Process PDF", variant="primary", size="lg")
-            status_box  = gr.Textbox(label="Status", value="⬆️ Upload a PDF to get started.",
-                                     interactive=False, lines=4, elem_classes=["status-box"])
+            process_btn = gr.Button("⚡ Process PDF", variant="primary", size="lg",
+                                    elem_classes=["process-btn"])
+            status_box  = gr.Textbox(label="📊 Status",
+                                     value="⬆️ Upload a PDF to get started.",
+                                     interactive=False, lines=4,
+                                     elem_classes=["status-box"])
             gr.Markdown("""
 ---
 **How it works:**
@@ -273,18 +295,22 @@ with gr.Blocks(
 - 🧠 `BAAI/bge-small-en-v1.5` embeddings
 - 📦 FAISS vector store (local)
 - 🤖 `TinyLlama-1.1B-Chat` LLM
-- 🔗 LangChain LCEL pipeline
+- 🔗 Direct retrieval + LLM pipeline
             """)
 
         with gr.Column(scale=2):
             gr.Markdown("### 💬 Ask Questions")
-            chatbot = gr.Chatbot(label="Conversation", height=450,
-                                 bubble_full_width=False, type="tuples",
+            chatbot = gr.Chatbot(label="Conversation", height=500,
+                                 type="messages",
+                                 show_label=True,
                                  elem_classes=["chat-window"])
             with gr.Row():
                 msg_input = gr.Textbox(placeholder="Ask something about the PDF...",
-                                       label="", scale=4, interactive=False)
-                send_btn  = gr.Button("Send ➤", variant="primary", scale=1)
+                                       label="Your question",
+                                       scale=4, interactive=False,
+                                       elem_classes=["msg-input"])
+                send_btn  = gr.Button("Send ➤", variant="primary", scale=1,
+                                      elem_classes=["send-btn"])
             clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary", size="sm")
 
     process_btn.click(fn=process_pdf, inputs=[pdf_input], outputs=[status_box, msg_input])
