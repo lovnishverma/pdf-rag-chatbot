@@ -10,14 +10,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
-# LLM
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+# LLM integration via OpenAI client
+from openai import OpenAI
 
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
 EMBED_MODEL   = "BAAI/bge-small-en-v1.5"
-LLM_MODEL     = "Qwen/Qwen3-0.6B"
+LLM_MODEL     = "deepseek-ai/deepseek-v4-pro"
 CHUNK_SIZE    = 800
 CHUNK_OVERLAP = 100
 TOP_K         = 3
@@ -39,28 +39,12 @@ embeddings = HuggingFaceEmbeddings(
 )
 print("✅ Embeddings ready.")
 
-print("⏳ Loading LLM (Qwen3-0.6B)...")
-tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
-model     = AutoModelForCausalLM.from_pretrained(LLM_MODEL, torch_dtype=torch.float32)
-
-# FIX: Pass generation params directly to pipeline() instead of using
-# GenerationConfig object — newer transformers creates one internally,
-# causing "multiple values for keyword argument 'generation_config'".
-# Also: presence_penalty is OpenAI-only; use repetition_penalty instead.
-hf_pipe = pipeline(
-    "text-generation",
-    model=model,
-    tokenizer=tokenizer,
-    return_full_text=False,
-    max_new_tokens=200,
-    do_sample=True,
-    temperature=0.7,
-    top_p=0.8,
-    top_k=20,
-    repetition_penalty=1.3,
-    device=0 if torch.cuda.is_available() else -1,
+print(f"⏳ Initializing NVIDIA API Client for {LLM_MODEL}...")
+client = OpenAI(
+  base_url = "https://integrate.api.nvidia.com/v1",
+  api_key = "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"
 )
-print("✅ LLM ready.")
+print("✅ LLM Client ready.")
 
 # ─────────────────────────────────────────────
 # GREETING / SMALL-TALK DETECTION
@@ -91,7 +75,6 @@ def is_too_short(text: str) -> bool:
 
 # ─────────────────────────────────────────────
 # PROMPT BUILDER
-# enable_thinking=False → skip <think> block, pure non-thinking mode (fast)
 # ─────────────────────────────────────────────
 SYSTEM_PROMPT = (
     "You are a document Q&A assistant. Your ONLY job is to answer questions "
@@ -102,19 +85,6 @@ SYSTEM_PROMPT = (
     "3. Answer in 1-3 short sentences. No preamble, no repetition of the question.\n"
     "4. Never say 'we can assume' or 'it is likely'. Only state what is written."
 )
-
-def build_prompt(context: str, question: str) -> str:
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": f"CONTEXT:\n{context}\n\nQUESTION: {question}"},
-    ]
-    # enable_thinking=False → non-thinking mode, no <think>...</think> overhead
-    return tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
 
 # ─────────────────────────────────────────────
 # ANSWER CLEANER
@@ -193,7 +163,6 @@ def process_pdf(pdf_file):
     except Exception as e:
         return f"❌ Error: {str(e)}", gr.update(interactive=False)
 
-
 # ─────────────────────────────────────────────
 # CHAT
 # ─────────────────────────────────────────────
@@ -234,8 +203,30 @@ def chat(user_message, history):
         source_docs  = retriever.invoke(user_message)
         context_text = "\n\n".join(d.page_content for d in source_docs)
 
-        prompt_text = build_prompt(context_text, user_message)
-        raw    = hf_pipe(prompt_text)[0]["generated_text"]
+        # Prepare messages array for DeepSeek via OpenAI API
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"CONTEXT:\n{context_text}\n\nQUESTION: {user_message}"}
+        ]
+
+        completion = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            temperature=0.7, # Lowered from 1 slightly for better grounded RAG facts
+            top_p=0.95,
+            max_tokens=2048,
+            extra_body={"chat_template_kwargs": {"thinking": False}},
+            stream=True
+        )
+
+        raw = ""
+        # Process the streaming response blocks
+        for chunk in completion:
+            if not getattr(chunk, "choices", None):
+                continue
+            if chunk.choices and chunk.choices[0].delta.content is not None:
+                raw += chunk.choices[0].delta.content
+
         answer = clean_answer(raw)
 
         pages = sorted(set(
@@ -255,10 +246,8 @@ def chat(user_message, history):
         history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
         return history, ""
 
-
 def clear_chat():
     return [], ""
-
 
 # ─────────────────────────────────────────────
 # GRADIO UI
@@ -335,12 +324,11 @@ with gr.Blocks(
             📄 PDF Q&amp;A Chatbot
         </h1>
         <p style="color:#475569;font-size:0.95rem;margin-top:8px;">
-            Retrieval-Augmented Generation · FAISS · BGE Embeddings · Qwen3-0.6B
+            Retrieval-Augmented Generation · FAISS · BGE Embeddings · DeepSeek-V4-Pro
         </p>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
-            <span style="background:#0d9488;color:white;padding:3px 12px;border-radius:20px;font-size:0.8rem;">🆓 100% Free</span>
-            <span style="background:#f1f5f9;color:#475569;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #cbd5e1;">CPU Friendly</span>
-            <span style="background:#f1f5f9;color:#475569;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #cbd5e1;">HuggingFace Spaces</span>
+            <span style="background:#0d9488;color:white;padding:3px 12px;border-radius:20px;font-size:0.8rem;">🆓 API Ready</span>
+            <span style="background:#f1f5f9;color:#475569;padding:3px 12px;border-radius:20px;font-size:0.8rem;border:1px solid #cbd5e1;">NVIDIA NIM</span>
         </div>
     </div>
     """)
@@ -366,7 +354,7 @@ with gr.Blocks(
 **Stack:**
 - 🧠 `BAAI/bge-small-en-v1.5` embeddings
 - 📦 FAISS + MMR retrieval (local)
-- 🤖 `Qwen3-0.6B` — non-thinking mode
+- 🤖 `deepseek-v4-pro` — via NVIDIA API
 - 🔗 Strict grounding prompt
             """)
 
@@ -404,8 +392,6 @@ with gr.Blocks(
             <div style="color:#475569;font-size:0.78rem;font-family:'Space Mono',monospace;text-align:right;">
                 Project 1 — RAG Chatbot &nbsp;|&nbsp;
                 Developed by <a href="https://github.com/lovnishverma" style="color:#0d9488;text-decoration:none;">Lovnish Verma</a>
-                &nbsp;|&nbsp;
-                <a href="https://www.nielit.gov.in" style="color:#0d9488;text-decoration:none;">nielit.gov.in</a>
             </div>
         </div>
     </div>
