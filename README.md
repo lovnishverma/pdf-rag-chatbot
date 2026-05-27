@@ -12,7 +12,7 @@ license: mit
 
 # 📄 PDF Q&A Chatbot — RAG (Retrieval-Augmented Generation)
 
-> **Project 1** from NIELIT Ropar Deep Learning Techniques Course (DOAI250006)  
+> **RAG Project**  AI with ML 6 Months Course 
 > **Level:** Beginner · **Build time:** 1–2 hours · **Deploy:** HuggingFace Spaces (Free)
 
 ---
@@ -132,7 +132,7 @@ device = "cuda"  # Much faster inference
 
 ## 👨‍💻 Author
 
-**Lovnish Verma** · Project Engineer & Faculty, NIELIT Ropar  
+**Lovnish Verma** · Project Engineer, NIELIT Ropar  
 GitHub: [@lovnishverma](https://github.com/lovnishverma)  
 YouTube: [@lovnishverma](https://youtube.com/@lovnishverma)  
 Portfolio: [lovnishverma.in](https://lovnishverma.in)
