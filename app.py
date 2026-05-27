@@ -1,6 +1,7 @@
 import gradio as gr
 import torch
 import re
+import os  # Added to fetch secrets
 
 # PDF Loading
 from langchain_community.document_loaders import PyPDFLoader
@@ -40,9 +41,16 @@ embeddings = HuggingFaceEmbeddings(
 print("✅ Embeddings ready.")
 
 print(f"⏳ Initializing NVIDIA API Client for {LLM_MODEL}...")
+
+# FETCH API KEY FROM SECRETS
+nvidia_api_key = os.environ.get("NVIDIA_API_KEY")
+
+if not nvidia_api_key:
+    print("⚠️ WARNING: 'NVIDIA_API_KEY' not found in environment secrets! The chatbot will fail when generating answers.")
+
 client = OpenAI(
   base_url = "https://integrate.api.nvidia.com/v1",
-  api_key = "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"
+  api_key = nvidia_api_key
 )
 print("✅ LLM Client ready.")
 
