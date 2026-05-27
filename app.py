@@ -44,7 +44,6 @@ print("⏳ Loading LLM (TinyLlama-1.1B-Chat)...")
 tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
 model     = AutoModelForCausalLM.from_pretrained(LLM_MODEL, torch_dtype=torch.float32)
 
-# FIX: pass generation params directly to pipeline() instead of GenerationConfig object
 hf_pipe = pipeline(
     "text-generation",
     model=model,
@@ -59,14 +58,43 @@ llm = HuggingFacePipeline(pipeline=hf_pipe)
 print("✅ LLM ready.")
 
 # ─────────────────────────────────────────────
-# USE TINYLLAMA CHAT TEMPLATE for proper instruction following
+# GREETING / SMALL-TALK DETECTION
+# ─────────────────────────────────────────────
+GREETINGS = {
+    "hi", "hello", "hey", "hii", "helo", "howdy", "sup", "what's up",
+    "whats up", "good morning", "good afternoon", "good evening",
+    "good night", "how are you", "how r u", "how are u", "greetings",
+    "namaste", "namaskar", "salaam", "yo", "hiya",
+}
+
+SMALL_TALK = {
+    "thanks", "thank you", "thank you so much", "ok", "okay", "cool",
+    "nice", "great", "awesome", "got it", "understood", "sure",
+    "bye", "goodbye", "see you", "take care", "good job", "well done",
+    "who are you", "what are you", "what can you do",
+}
+
+def is_greeting(text: str) -> bool:
+    cleaned = text.strip().lower().rstrip("!.,?")
+    return cleaned in GREETINGS
+
+def is_small_talk(text: str) -> bool:
+    cleaned = text.strip().lower().rstrip("!.,?")
+    return cleaned in SMALL_TALK
+
+def is_too_short_to_be_question(text: str) -> bool:
+    """Single words or very short phrases that aren't questions."""
+    words = text.strip().split()
+    return len(words) <= 2 and "?" not in text
+
+# ─────────────────────────────────────────────
+# USE TINYLLAMA CHAT TEMPLATE
 # ─────────────────────────────────────────────
 SYSTEM_PROMPT = """You are a concise assistant. Answer ONLY from the context provided.
 If the answer is not in the context, say: I don't know based on the document.
 Give a short, direct answer. Do NOT repeat the question. Do NOT loop."""
 
 def build_chat_prompt(context: str, question: str, history_text: str) -> str:
-    """Format using TinyLlama's chat template for best results."""
     user_content = f"""Context from PDF:
 {context}
 
@@ -82,7 +110,6 @@ Question: {question}"""
     )
 
 def clean_answer(raw: str) -> str:
-    """Strip any hallucinated repetitions and artefacts."""
     if not isinstance(raw, str):
         raw = str(raw)
     for stop in ["Question:", "I am interested", "Could you please", "Can you please",
@@ -133,21 +160,47 @@ def process_pdf(pdf_file):
 
 
 # ─────────────────────────────────────────────
-# CHAT  (history managed in plain Python)
+# CHAT
 # ─────────────────────────────────────────────
 def chat(user_message, history):
     global rag_chain, vectorstore
 
     history = history or []
 
-    if rag_chain is None:
-        history.append({"role": "user", "content": user_message})
-        history.append({"role": "assistant", "content": "⚠️ Please upload and process a PDF first."})
-        return history, ""
-
     if not user_message.strip():
         return history, ""
 
+    # ── Greeting check ──────────────────────────────────────────────
+    if is_greeting(user_message):
+        history.append({"role": "user",      "content": user_message})
+        history.append({"role": "assistant", "content":
+            "👋 Hello! I'm your PDF assistant. Please upload a PDF and ask me questions about it."})
+        return history, ""
+
+    # ── Small talk check ────────────────────────────────────────────
+    if is_small_talk(user_message):
+        history.append({"role": "user",      "content": user_message})
+        history.append({"role": "assistant", "content":
+            "😊 I'm here to help you with questions about your PDF document. "
+            "Feel free to ask anything about the uploaded file!"})
+        return history, ""
+
+    # ── PDF not loaded yet ──────────────────────────────────────────
+    if rag_chain is None:
+        history.append({"role": "user",      "content": user_message})
+        history.append({"role": "assistant", "content":
+            "⚠️ Please upload and process a PDF first, then ask your question."})
+        return history, ""
+
+    # ── Too short / not a real question ─────────────────────────────
+    if is_too_short_to_be_question(user_message):
+        history.append({"role": "user",      "content": user_message})
+        history.append({"role": "assistant", "content":
+            "🤔 Could you please ask a complete question about the PDF? "
+            "For example: *\"What is the main topic of this document?\"*"})
+        return history, ""
+
+    # ── RAG pipeline ────────────────────────────────────────────────
     try:
         history_text = ""
         msgs = history[-8:] if len(history) >= 2 else []
@@ -251,7 +304,7 @@ with gr.Blocks(
             </div>
         </div>
         <div style="color:#475569;font-size:0.72rem;text-align:right;font-family:'Space Mono',monospace;">
-            M.Tech AI · DOAI250006<br>Deep Learning Techniques
+            M.Tech AI · DOAI250006<br>AI WITH ML Course
         </div>
     </div>
     <div style="text-align:center;padding:20px 0 8px;">
@@ -322,7 +375,7 @@ with gr.Blocks(
                      style="height:32px;border-radius:4px;background:white;padding:2px;"
                      onerror="this.style.display='none'">
                 <span style="color:#475569;font-size:0.78rem;font-family:'Space Mono',monospace;">
-                    &copy; 2025 NIELIT Ropar. All rights reserved.
+                    &copy; 2026 NIELIT Ropar. All rights reserved.
                 </span>
             </div>
             <div style="color:#475569;font-size:0.78rem;font-family:'Space Mono',monospace;text-align:right;">
