@@ -1,6 +1,3 @@
-Here is the complete, correct, and fully updated `README.md` file. I have fixed the markdown formatting issues (like the broken git clone link), updated the Architecture diagram and Tech Stack to reflect the new `ChatNVIDIA` LangChain integration, and made sure every section is comprehensive and ready for production.
-
-```markdown
 ---
 title: PDF Q&A Chatbot (RAG)
 emoji: 📄
