@@ -10,7 +10,6 @@ from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain_community.vectorstores import FAISS
 
 # LLM
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
@@ -49,11 +48,48 @@ hf_pipe   = pipeline(
     model=model,
     tokenizer=tokenizer,
     return_full_text=False,
+    max_new_tokens=256,
+    do_sample=False,
+    repetition_penalty=1.3,
     device=0 if torch.cuda.is_available() else -1,
-    model_kwargs={"max_new_tokens": 512, "repetition_penalty": 1.15}
 )
 llm = HuggingFacePipeline(pipeline=hf_pipe)
 print("✅ LLM ready.")
+
+# ─────────────────────────────────────────────
+# USE TINYLLAMA CHAT TEMPLATE for proper instruction following
+# ─────────────────────────────────────────────
+SYSTEM_PROMPT = """You are a concise assistant. Answer ONLY from the context provided.
+If the answer is not in the context, say: I don't know based on the document.
+Give a short, direct answer. Do NOT repeat the question. Do NOT loop."""
+
+def build_chat_prompt(context: str, question: str, history_text: str) -> str:
+    """Format using TinyLlama's chat template for best results."""
+    user_content = f"""Context from PDF:
+{context}
+
+{f'Previous conversation:{chr(10)}{history_text}' if history_text.strip() else ''}
+Question: {question}"""
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user",   "content": user_content},
+    ]
+    return tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+
+def clean_answer(raw: str) -> str:
+    """Strip any hallucinated repetitions and artefacts."""
+    if not isinstance(raw, str):
+        raw = str(raw)
+    # Remove everything after a repeated "Question:" or "I am interested"
+    for stop in ["Question:", "I am interested", "Could you please", "Can you please",
+                 "Human:", "User:", "<|", "\n\n\n"]:
+        idx = raw.find(stop)
+        if idx > 30:          # keep at least 30 chars of real answer
+            raw = raw[:idx]
+    return raw.strip() or "I don't know based on the document."
 
 # ─────────────────────────────────────────────
 # PROMPT  (no memory dependency — history is
@@ -149,14 +185,10 @@ def chat(user_message, history):
         source_docs = rag_chain.invoke(user_message)
         context_text = "\n\n".join(d.page_content for d in source_docs)
 
-        # Build prompt string and call LLM directly
-        prompt_text = PROMPT.format(
-            context=context_text,
-            chat_history=history_text,
-            question=user_message
-        )
-        raw = llm.invoke(prompt_text)
-        answer = raw if isinstance(raw, str) else str(raw)
+        # Build TinyLlama chat-formatted prompt and invoke
+        prompt_text = build_chat_prompt(context_text, user_message, history_text)
+        raw = hf_pipe(prompt_text)[0]["generated_text"]
+        answer = clean_answer(raw)
 
         # Source pages
         pages = sorted(set(
