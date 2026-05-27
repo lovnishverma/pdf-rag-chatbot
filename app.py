@@ -42,20 +42,17 @@ print("✅ Embeddings ready.")
 
 print("⏳ Loading LLM (TinyLlama-1.1B-Chat)...")
 tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
-model     = AutoModelForCausalLM.from_pretrained(LLM_MODEL, dtype=torch.float32)
-from transformers import GenerationConfig as HFGenerationConfig
+model     = AutoModelForCausalLM.from_pretrained(LLM_MODEL, torch_dtype=torch.float32)
 
-_gen_cfg = HFGenerationConfig(
-    max_new_tokens=256,
-    do_sample=False,
-    repetition_penalty=1.3,
-)
-hf_pipe   = pipeline(
+# FIX: pass generation params directly to pipeline() instead of GenerationConfig object
+hf_pipe = pipeline(
     "text-generation",
     model=model,
     tokenizer=tokenizer,
     return_full_text=False,
-    generation_config=_gen_cfg,
+    max_new_tokens=256,
+    do_sample=False,
+    repetition_penalty=1.3,
     device=0 if torch.cuda.is_available() else -1,
 )
 llm = HuggingFacePipeline(pipeline=hf_pipe)
@@ -88,11 +85,10 @@ def clean_answer(raw: str) -> str:
     """Strip any hallucinated repetitions and artefacts."""
     if not isinstance(raw, str):
         raw = str(raw)
-    # Remove everything after a repeated "Question:" or "I am interested"
     for stop in ["Question:", "I am interested", "Could you please", "Can you please",
                  "Human:", "User:", "<|", "\n\n\n"]:
         idx = raw.find(stop)
-        if idx > 30:          # keep at least 30 chars of real answer
+        if idx > 30:
             raw = raw[:idx]
     return raw.strip() or "I don't know based on the document."
 
@@ -123,10 +119,7 @@ def process_pdf(pdf_file):
             return "❌ No text chunks. PDF may be image-based (scanned).", gr.update(interactive=False)
 
         vectorstore = FAISS.from_documents(chunks, embeddings)
-        retriever   = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
-
-        # Build simple retriever — chain invoked manually in chat()
-        rag_chain = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
+        rag_chain   = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
 
         return (
             f"✅ PDF processed!\n"
@@ -156,24 +149,19 @@ def chat(user_message, history):
         return history, ""
 
     try:
-        # Build chat history string from Gradio history list
         history_text = ""
-        # Build from last 4 pairs (8 messages) in messages format
         msgs = history[-8:] if len(history) >= 2 else []
         for msg in msgs:
             role = "Human" if msg["role"] == "user" else "Assistant"
             history_text += f"{role}: {msg['content']}\n"
 
-        # Retrieve relevant chunks
-        source_docs = rag_chain.invoke(user_message)
+        source_docs  = rag_chain.invoke(user_message)
         context_text = "\n\n".join(d.page_content for d in source_docs)
 
-        # Build TinyLlama chat-formatted prompt and invoke
         prompt_text = build_chat_prompt(context_text, user_message, history_text)
-        raw = hf_pipe(prompt_text)[0]["generated_text"]
+        raw    = hf_pipe(prompt_text)[0]["generated_text"]
         answer = clean_answer(raw)
 
-        # Source pages
         pages = sorted(set(
             doc.metadata.get("page", 0) + 1
             for doc in source_docs
@@ -182,12 +170,12 @@ def chat(user_message, history):
         if pages:
             answer += f"\n\n📌 *Sources: Page(s) {', '.join(map(str, pages))}*"
 
-        history.append({"role": "user", "content": user_message})
+        history.append({"role": "user",      "content": user_message})
         history.append({"role": "assistant", "content": answer})
         return history, ""
 
     except Exception as e:
-        history.append({"role": "user", "content": user_message})
+        history.append({"role": "user",      "content": user_message})
         history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
         return history, ""
 
@@ -204,14 +192,11 @@ CSS = """
 
 .gradio-container { font-family: 'Inter', sans-serif !important; max-width: 1200px !important; }
 
-/* Header & Footer */
 .nielit-header { background: #0f172a; border-bottom: 3px solid #0d9488; }
 .nielit-footer { background: #0f172a; border-top: 2px solid #1e293b; }
 
-/* Upload area */
 .upload-box label { color: #1e293b !important; font-weight: 500 !important; }
 
-/* Status textbox - force dark text on light bg */
 .status-box textarea {
     background: #f0fdf4 !important;
     color: #064e3b !important;
@@ -222,7 +207,6 @@ CSS = """
 }
 .status-box label { color: #1e293b !important; font-weight: 600 !important; }
 
-/* Chat input */
 .msg-input textarea {
     color: #111827 !important;
     background: #ffffff !important;
@@ -230,17 +214,14 @@ CSS = """
 }
 .msg-input label { color: #374151 !important; }
 
-/* Markdown text visible */
 .gradio-container .prose { color: #1e293b !important; }
 .gradio-container p, .gradio-container li { color: #374151 !important; }
 .gradio-container strong { color: #111827 !important; }
 .gradio-container code { background: #f1f5f9 !important; color: #0f766e !important; padding: 2px 5px; border-radius: 4px; }
 
-/* Process button */
 .process-btn { background: #0d9488 !important; color: white !important; font-weight: 700 !important; font-size: 1rem !important; }
 .process-btn:hover { background: #0f766e !important; }
 
-/* Send button */
 .send-btn { background: #0d9488 !important; color: white !important; font-weight: 700 !important; }
 """
 
