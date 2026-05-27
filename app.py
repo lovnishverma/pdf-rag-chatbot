@@ -304,7 +304,7 @@ with gr.Blocks(
             </div>
         </div>
         <div style="color:#475569;font-size:0.72rem;text-align:right;font-family:'Space Mono',monospace;">
-            M.Tech AI · DOAI250006<br>AI WITH ML Course
+            NIELIT ROPAR<br>AI WITH ML Course
         </div>
     </div>
     <div style="text-align:center;padding:20px 0 8px;">
