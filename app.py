@@ -1,7 +1,7 @@
 import gradio as gr
 import torch
 import re
-import os  # Added to fetch secrets
+import os
 
 # PDF Loading
 from langchain_community.document_loaders import PyPDFLoader
@@ -11,8 +11,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
-# LLM integration via OpenAI client
-from openai import OpenAI
+# LLM integration via NVIDIA LangChain Endpoints
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 # ─────────────────────────────────────────────
 # CONFIG
@@ -42,15 +42,20 @@ print("✅ Embeddings ready.")
 
 print(f"⏳ Initializing NVIDIA API Client for {LLM_MODEL}...")
 
-# FETCH API KEY FROM SECRETS
+# FETCH API KEY FROM SECRETS (Production standard)
 nvidia_api_key = os.environ.get("NVIDIA_API_KEY")
 
 if not nvidia_api_key:
-    print("⚠️ WARNING: 'NVIDIA_API_KEY' not found in environment secrets! The chatbot will fail when generating answers.")
+    print("⚠️ WARNING: 'NVIDIA_API_KEY' not found in environment secrets! Chat generation will fail.")
 
-client = OpenAI(
-  base_url = "https://integrate.api.nvidia.com/v1",
-  api_key = nvidia_api_key
+# Production-ready client using LangChain's native NVIDIA integration
+client = ChatNVIDIA(
+    model=LLM_MODEL,
+    api_key=nvidia_api_key,
+    temperature=0.7,      # Lowered slightly from 1.0 for better grounded RAG facts
+    top_p=0.95,
+    max_tokens=2048,      # 2048 is safe for RAG responses
+    extra_body={"chat_template_kwargs": {"thinking": False}},
 )
 print("✅ LLM Client ready.")
 
@@ -95,41 +100,6 @@ SYSTEM_PROMPT = (
 )
 
 # ─────────────────────────────────────────────
-# ANSWER CLEANER
-# ─────────────────────────────────────────────
-STOP_PHRASES = [
-    "we can assume", "it is likely", "it can be assumed", "it seems",
-    "probably", "might have", "could have", "may have",
-    "question:", "human:", "user:", "assistant:",
-    "i am interested", "could you please", "can you please",
-    "<|", "\n\n\n",
-]
-
-def clean_answer(raw: str) -> str:
-    if not isinstance(raw, str):
-        raw = str(raw)
-
-    # Strip any stray <think>...</think> block just in case
-    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-
-    lower = raw.lower()
-    for phrase in STOP_PHRASES:
-        idx = lower.find(phrase)
-        if idx > 20:
-            raw = raw[:idx].strip()
-            break
-
-    raw = re.sub(r'\*{2,}', '', raw)
-    raw = re.sub(r'\.{3,}', '...', raw)
-    raw = raw.strip(" \t\n.,")
-
-    # Keep max 3 sentences
-    sentences = re.split(r'(?<=[.!?])\s+', raw)
-    raw = " ".join(sentences[:3]).strip()
-
-    return raw if raw else "Not mentioned in the document."
-
-# ─────────────────────────────────────────────
 # PROCESS PDF
 # ─────────────────────────────────────────────
 def process_pdf(pdf_file):
@@ -171,88 +141,84 @@ def process_pdf(pdf_file):
     except Exception as e:
         return f"❌ Error: {str(e)}", gr.update(interactive=False)
 
+
 # ─────────────────────────────────────────────
-# CHAT
+# CHAT (GENERATOR FOR TRUE STREAMING)
 # ─────────────────────────────────────────────
 def chat(user_message, history):
     global retriever
 
     history = history or []
 
+    # Ignore empty messages
     if not user_message.strip():
-        return history, ""
+        yield history, ""
+        return
 
+    # Add user message to history instantly
+    history.append({"role": "user", "content": user_message})
+
+    # Rule-based early exits
     if is_greeting(user_message):
-        history.append({"role": "user",      "content": user_message})
-        history.append({"role": "assistant", "content":
-            "👋 Hello! I'm your PDF assistant. Upload a PDF and ask me anything about it."})
-        return history, ""
+        history.append({"role": "assistant", "content": "👋 Hello! I'm your PDF assistant. Upload a PDF and ask me anything about it."})
+        yield history, ""
+        return
 
     if is_small_talk(user_message):
-        history.append({"role": "user",      "content": user_message})
-        history.append({"role": "assistant", "content":
-            "😊 Happy to help! Ask any question about your uploaded PDF."})
-        return history, ""
+        history.append({"role": "assistant", "content": "😊 Happy to help! Ask any question about your uploaded PDF."})
+        yield history, ""
+        return
 
     if retriever is None:
-        history.append({"role": "user",      "content": user_message})
-        history.append({"role": "assistant", "content":
-            "⚠️ Please upload and process a PDF first, then ask your question."})
-        return history, ""
+        history.append({"role": "assistant", "content": "⚠️ Please upload and process a PDF first, then ask your question."})
+        yield history, ""
+        return
 
     if is_too_short(user_message):
-        history.append({"role": "user",      "content": user_message})
-        history.append({"role": "assistant", "content":
-            "🤔 Could you ask a complete question? e.g. *\"What is the main topic of this document?\"*"})
-        return history, ""
+        history.append({"role": "assistant", "content": "🤔 Could you ask a complete question? e.g. *\"What is the main topic of this document?\"*"})
+        yield history, ""
+        return
 
-    # ── RAG pipeline ────────────────────────────────────────────────
+    # ── RAG Pipeline ────────────────────────────────────────────────
     try:
+        # 1. Retrieve Docs
         source_docs  = retriever.invoke(user_message)
         context_text = "\n\n".join(d.page_content for d in source_docs)
 
-        # Prepare messages array for DeepSeek via OpenAI API
+        # 2. Build Messages Array
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"CONTEXT:\n{context_text}\n\nQUESTION: {user_message}"}
         ]
 
-        completion = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=messages,
-            temperature=0.7, # Lowered from 1 slightly for better grounded RAG facts
-            top_p=0.95,
-            max_tokens=2048,
-            extra_body={"chat_template_kwargs": {"thinking": False}},
-            stream=True
-        )
+        # 3. Create placeholder for Assistant Response in UI
+        history.append({"role": "assistant", "content": ""})
+        yield history, "" # Updates UI to show loading state / clear input box
 
-        raw = ""
-        # Process the streaming response blocks
-        for chunk in completion:
-            if not getattr(chunk, "choices", None):
-                continue
-            if chunk.choices and chunk.choices[0].delta.content is not None:
-                raw += chunk.choices[0].delta.content
+        # 4. Stream response from NVIDIA endpoint
+        for chunk in client.stream(messages):
+            if hasattr(chunk, "content") and chunk.content:
+                history[-1]["content"] += chunk.content
+                yield history, "" # Yield instantly pushes new chars to the UI
 
-        answer = clean_answer(raw)
-
+        # 5. Append citations to the final message
         pages = sorted(set(
             doc.metadata.get("page", 0) + 1
             for doc in source_docs
             if isinstance(doc.metadata.get("page"), int)
         ))
         if pages:
-            answer += f"\n\n📌 *Sources: Page(s) {', '.join(map(str, pages))}*"
-
-        history.append({"role": "user",      "content": user_message})
-        history.append({"role": "assistant", "content": answer})
-        return history, ""
+            history[-1]["content"] += f"\n\n📌 *Sources: Page(s) {', '.join(map(str, pages))}*"
+            yield history, ""
 
     except Exception as e:
-        history.append({"role": "user",      "content": user_message})
-        history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
-        return history, ""
+        # Graceful error handling in UI
+        if "api_key" in str(e).lower() or "401" in str(e):
+            history[-1]["content"] = "❌ **Error:** Invalid or missing NVIDIA_API_KEY. Please set it in your environment."
+        else:
+            history[-1]["content"] = f"❌ **Error generating response:** {str(e)}"
+        yield history, ""
+
 
 def clear_chat():
     return [], ""
@@ -375,12 +341,13 @@ with gr.Blocks(
             with gr.Row():
                 msg_input = gr.Textbox(placeholder="Ask something about the PDF...",
                                        label="Your question",
-                                       scale=4, interactive=False,
+                                       scale=4, interactive=True,
                                        elem_classes=["msg-input"])
                 send_btn  = gr.Button("Send ➤", variant="primary", scale=1,
                                       elem_classes=["send-btn"])
             clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary", size="sm")
 
+    # Wire up the events for true streaming
     process_btn.click(fn=process_pdf, inputs=[pdf_input], outputs=[status_box, msg_input])
     send_btn.click(fn=chat, inputs=[msg_input, chatbot], outputs=[chatbot, msg_input])
     msg_input.submit(fn=chat, inputs=[msg_input, chatbot], outputs=[chatbot, msg_input])
