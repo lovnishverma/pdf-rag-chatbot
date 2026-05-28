@@ -8,7 +8,7 @@ sdk_version: 5.23.0
 app_file: app.py
 pinned: false
 license: mit
-short_description: RAG-based PDF chatbot using NVIDIA API and DeepSeek-V4-Pro
+short_description: RAG-based PDF chatbot using Groq + Llama 3.3
 ---
 
 <div align="center">
