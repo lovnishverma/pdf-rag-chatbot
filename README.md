@@ -17,7 +17,7 @@ short_description: RAG-based PDF chatbot using Groq + Llama 3.3
 
 ### Retrieval-Augmented Generation · Query multiple PDFs instantly
 
-[![HuggingFace Space](https://img.shields.io/badge/🤗%20HuggingFace-Space-blue?style=for-the-badge)](https://huggingface.co/spaces/LovnishVerma/rag)
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20HuggingFace-Space-blue?style=for-the-badge)](https://huggingface.co/spaces/LovnishVerma/pdf-rag-chatbot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Gradio](https://img.shields.io/badge/Gradio-Mobile%20Responsive-FF7C00?style=flat-square&logo=gradio&logoColor=white)](https://gradio.app)
