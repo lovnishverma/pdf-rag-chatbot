@@ -1,8 +1,8 @@
 ---
 title: PDF Q&A Chatbot (RAG)
 emoji: 📄
-colorFrom: red
-colorTo: blue
+colorFrom: yellow
+colorTo: green
 sdk: gradio
 sdk_version: 5.23.0
 app_file: app.py
@@ -13,21 +13,21 @@ short_description: RAG-based PDF chatbot using NVIDIA API and DeepSeek-V4-Pro
 
 <div align="center">
 
-# 📄 PDF Q&A Chatbot — RAG (DeepSeek-V4-Pro Edition)
+# 📄 Multi-Document RAG System (Groq + Llama 3.3 Edition)
 
-### Retrieval-Augmented Generation · Ask anything from any PDF
+### Retrieval-Augmented Generation · Query multiple PDFs instantly
 
 [![HuggingFace Space](https://img.shields.io/badge/🤗%20HuggingFace-Space-blue?style=for-the-badge)](https://huggingface.co/spaces/LovnishVerma/rag)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Gradio](https://img.shields.io/badge/Gradio-5.x-FF7C00?style=flat-square&logo=gradio&logoColor=white)](https://gradio.app)
+[![Gradio](https://img.shields.io/badge/Gradio-Mobile%20Responsive-FF7C00?style=flat-square&logo=gradio&logoColor=white)](https://gradio.app)
 [![LangChain](https://img.shields.io/badge/LangChain-0.3-1C3C3C?style=flat-square&logo=chainlink&logoColor=white)](https://langchain.com)
 [![FAISS](https://img.shields.io/badge/FAISS-Local%20Vector%20DB-0467DF?style=flat-square&logo=meta&logoColor=white)](https://faiss.ai)
-[![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek--V4--Pro-7B68EE?style=flat-square)](https://huggingface.co/deepseek-ai)
-[![NVIDIA NIM](https://img.shields.io/badge/API-NVIDIA%20NIM-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://build.nvidia.com)
+[![Llama](https://img.shields.io/badge/LLM-Llama--3.3--70B-0467DF?style=flat-square)](https://ai.meta.com/llama/)
+[![Groq](https://img.shields.io/badge/API-Groq%20Cloud-F55036?style=flat-square)](https://groq.com)
 
 > 🎓 **RAG Project** · AI with ML Course · NIELIT Ropar  
-> **Level:** Intermediate · **Architecture:** Hybrid (Local Embeddings + Cloud LLM)
+> **Level:** Advanced · **Architecture:** Hybrid (Local Embeddings + Ultra-Fast Cloud LLM)
 >
 > GitHub Repo: https://github.com/lovnishverma/pdf-rag-chatbot
 
@@ -37,17 +37,17 @@ short_description: RAG-based PDF chatbot using NVIDIA API and DeepSeek-V4-Pro
 
 ## 📸 Preview
 
-> Upload a PDF → Ask questions → Get grounded answers with page citations streamed in real-time.
+> Upload multiple PDFs → Ask questions across all documents → Get grounded answers with file/page citations streamed instantly.
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  📁 Upload PDF          │  💬 Ask Questions             │
+│  📁 Upload Documents    │  💬 Query Interface           │
 │  ─────────────────────  │  ───────────────────────────  │
-│  [ Drop PDF here ]      │  You: What is the summary?    │
+│  [ Drop PDF(s) here ]   │  You: Compare the findings... │
 │                         │                               │
-│  [ ⚡ Process PDF ]     │  Bot: The document covers...  │
-│                         │  📌 Sources: Page(s) 2, 5     │
-│  ✅ 12 pages, 48 chunks │                               │
+│  [ ⚡ Build Vector Space]│ Bot: The reports differ...   │
+│                         │  📌 Sources: Doc1 (Pg 2),     │
+│  ✅ 3 Docs, 48 chunks   │               Doc2 (Pg 5)     │
 └─────────────────────────────────────────────────────────┘
 
 ```
@@ -57,13 +57,13 @@ short_description: RAG-based PDF chatbot using NVIDIA API and DeepSeek-V4-Pro
 ## 🏗️ Architecture
 
 ```text
-┌──────────────┐
-│  PDF Upload  │  (PyPDFLoader)
-└──────┬───────┘
+┌─────────────────┐
+│  Multiple PDFs  │  (PyPDFLoader) Batch Ingestion
+└──────┬──────────┘
        ↓
 ┌──────────────────┐
 │  Text Chunking   │  RecursiveCharacterTextSplitter
-│  chunk=800       │  overlap=100
+│  chunk=800       │  overlap=100 + Metadata Tagging
 └──────┬───────────┘
        ↓
 ┌────────────────────────┐
@@ -72,20 +72,20 @@ short_description: RAG-based PDF chatbot using NVIDIA API and DeepSeek-V4-Pro
 └──────┬─────────────────┘
        ↓
 ┌──────────────────┐
-│  FAISS Index     │  Local vector store
+│  FAISS Index     │  Combined Local Vector Store
 └──────┬───────────┘
        ↓  ← User asks question
 ┌──────────────────────┐
-│  MMR Retrieval       │  Top-3 chunks (fetch_k=9)
-│  (diversity-aware)   │
+│  MMR Retrieval       │  Top-4 chunks across all docs
+│  (diversity-aware)   │  fetch_k=12
 └──────┬───────────────┘
        ↓
 ┌─────────────────────────────────────────┐
-│  DeepSeek-V4-Pro (via NVIDIA API)       │  Strict grounding prompt
-│  ChatNVIDIA (LangChain) stream=True     │  max_tokens=2048
+│  Llama-3.3-70B-Versatile (via Groq API) │  Strict grounding prompt
+│  ChatGroq (LangChain) stream=True       │  temperature=0.5
 └──────┬──────────────────────────────────┘
        ↓
-  Grounded answer + page citations
+  Grounded answer + Cross-document citations
 
 ```
 
@@ -95,38 +95,36 @@ short_description: RAG-based PDF chatbot using NVIDIA API and DeepSeek-V4-Pro
 
 | Layer | Component | Tool |
 | --- | --- | --- |
-| 🖥️ Frontend | UI Framework | Gradio 5 |
-| 📄 Ingestion | PDF Loader | LangChain `PyPDFLoader` |
+| 🖥️ Frontend | UI Framework | Gradio 5 (Mobile Responsive Flexbox) |
+| 📄 Ingestion | PDF Loader | LangChain `PyPDFLoader` (Batch Processing) |
 | ✂️ Ingestion | Text Splitter | `RecursiveCharacterTextSplitter` |
 | 🧠 Embedding | Encoder Model | `BAAI/bge-small-en-v1.5` (Local) |
-| 🗄️ Retrieval | Vector Store | FAISS (local) + MMR |
-| 🤖 Generation | LLM API Client | `langchain-nvidia-ai-endpoints` (`ChatNVIDIA`) |
-| 🧠 Generation | Base Model | `deepseek-ai/deepseek-v4-pro` (via NVIDIA NIM) |
+| 🗄️ Retrieval | Vector Store | FAISS (local) + MMR Search |
+| 🤖 Generation | LLM API Client | `langchain-groq` (`ChatGroq`) |
+| 🧠 Generation | Base Model | `llama-3.3-70b-versatile` (via Groq Cloud) |
 
 ---
 
 ## ✨ Features
 
-* 📤 **Upload any PDF** — Supports research papers, textbooks, notes, and corporate reports.
-* ⚡ **Fast Local Processing** — Document chunking and embedding generation happen locally in seconds using lightweight BGE models.
-* 🔍 **MMR Retrieval** — Ensures diverse, non-redundant context chunks are fed to the AI.
-* 🧠 **High-Tier Reasoning** — Utilizes DeepSeek-V4-Pro for highly accurate synthesis and reading comprehension.
-* ⚡ **True Real-Time Streaming** — Answers stream into the UI character-by-character natively via LangChain.
-* 📌 **Page Citations** — Every generated answer includes the exact source page numbers from the uploaded document.
-* 🔒 **Secure API Key Handling** — Safely reads your NVIDIA API key from environment variables/secrets instead of hardcoding.
+* 📚 **Multi-Document Batch Processing** — Upload and digest multiple PDFs simultaneously to cross-reference data.
+* ⚡ **Lightning-Fast Inference** — Swapped to Groq API (LPUs) to eliminate gateway timeouts and deliver near-instantaneous token streaming.
+* 📱 **Mobile-First UI** — Completely refactored Gradio interface utilizing dynamic scaling and flexbox wraps for seamless use on phones and tablets.
+* 🔍 **Cross-Document Citations** — Generated answers strictly cite both the *Source File Name* and the *Page Number*.
+* 🧠 **High-Tier Reasoning** — Utilizes Meta's flagship `Llama-3.3-70B` for deep comprehension and synthesis.
+* 🔒 **Secure API Key Handling** — Safely reads your Groq API key from environment variables/secrets.
 
 ---
 
-## 🔑 Prerequisites: Getting Your NVIDIA API Key
+## 🔑 Prerequisites: Getting Your Groq API Key
 
-This project uses the **NVIDIA NIM API** to run the DeepSeek-V4-Pro model for free. Follow these steps to generate your API key:
+This project relies on **Groq Cloud** for ultra-low latency LLM inference.
 
-1. Go to [build.nvidia.com](https://build.nvidia.com).
-2. Click **Sign In** (or create a free NVIDIA Developer account if you don't have one).
-3. Once logged in, browse the models and click on **DeepSeek-V4-Pro**.
-4. On the model's playground page, look for the **"Get API Key"** button (located near the code snippets).
-5. Generate the key and copy it. It will look like this: `nvapi-LU2...`
-6. **Keep this key secret!** Never commit it to GitHub.
+1. Go to [console.groq.com](https://console.groq.com/).
+2. Log in or create a free developer account.
+3. Navigate to **API Keys** in the left sidebar.
+4. Click **Create API Key**, name it, and copy the string (e.g., `gsk_...`).
+5. **Keep this key secret!** Never commit it to GitHub.
 
 ---
 
@@ -149,29 +147,28 @@ pip install -r requirements.txt
 
 ```
 
-**3. Set your API Key Secret:** Before running the app, you need to expose your NVIDIA API key as an environment variable so `app.py` can read it securely.
+**3. Set your API Key Secret:** Before running the app, expose your Groq API key as an environment variable.
 
 * **On Windows (Command Prompt):**
+
 ```cmd
-set NVIDIA_API_KEY=your-api-key-here
+set GROQ=your-api-key-here
 
 ```
-
 
 * **On Windows (PowerShell):**
+
 ```powershell
-$env:NVIDIA_API_KEY="your-api-key-here"
+$env:GROQ="your-api-key-here"
 
 ```
-
 
 * **On Mac/Linux:**
+
 ```bash
-export NVIDIA_API_KEY="your-api-key-here"
+export GROQ="your-api-key-here"
 
 ```
-
-
 
 **4. Launch the App:**
 
@@ -190,10 +187,9 @@ If you are hosting this project on HuggingFace, you must add your API key to the
 2. Click on **Settings** (the gear icon).
 3. Scroll down to the **Variables and secrets** section.
 4. Click **New secret**.
-5. Set the **Name** to: `NVIDIA_API_KEY`
-6. Set the **Value** to your actual key (e.g., `nvapi-LU2...`).
+5. Set the **Name** to: `GROQ`
+6. Set the **Value** to your actual key (e.g., `gsk_...`).
 7. Click **Save** and **Restart** your Space.
-8. The app will now securely fetch the key on startup!
 
 ---
 
@@ -201,35 +197,24 @@ If you are hosting this project on HuggingFace, you must add your API key to the
 
 | Step | Action |
 | --- | --- |
-| 1️⃣ | **Upload:** Drag and drop any PDF into the file picker on the left. |
-| 2️⃣ | **Process:** Click **⚡ Process PDF** and wait for the status box to turn green with chunk statistics. |
-| 3️⃣ | **Ask:** Type your question in the chat box at the bottom right. |
-| 4️⃣ | **Send:** Hit **Send ➤** or press `Enter`. |
-| 5️⃣ | **Read:** Watch the grounded answer stream in, complete with source page numbers. |
+| 1️⃣ | **Upload:** Drag and drop one or multiple PDFs into the upload box. |
+| 2️⃣ | **Process:** Click **⚡ Build Vector Space** and wait for the batch ingestion to complete. |
+| 3️⃣ | **Ask:** Type your query in the chat input (e.g., "Summarize the differences between Doc A and Doc B"). |
+| 4️⃣ | **Send:** Hit **Send** or press `Enter`. |
+| 5️⃣ | **Read:** Watch the fast-streaming answer appear with precise file/page citations. |
 
 ---
 
 ## 🔧 Customization
 
-### Swap the LLM (via API)
+### Tune Retrieval Parameters
 
-You can easily swap the LLM to any other model supported by the NVIDIA integration by changing the variable in `app.py`:
-
-```python
-# In app.py — change LLM_MODEL:
-LLM_MODEL = "meta/llama-3.1-70b-instruct"      # Example: Llama 3.1
-LLM_MODEL = "mistralai/mixtral-8x7b-instruct-v0.1" # Example: Mixtral
-
-```
-
-### Tune Chunking & Retrieval
-
-Adjust these global variables at the top of `app.py` to change how the document is digested:
+Adjust these global variables at the top of `app.py` to change how the documents are digested, particularly if you are processing massive batches:
 
 ```python
 CHUNK_SIZE    = 800   # ↑ larger = more context per chunk
 CHUNK_OVERLAP = 100   # overlap to avoid splitting sentences in half
-TOP_K         = 3     # number of chunks retrieved and sent to the LLM per query
+TOP_K         = 4     # Number of chunks retrieved. Increase if querying many docs at once.
 
 ```
 
@@ -249,7 +234,7 @@ Contributions, issues, and feature requests are always welcome!
 
 ## 📄 License
 
-This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
 
 ---
 
