@@ -35,6 +35,9 @@ short_description: RAG-based PDF chatbot using Groq + Llama 3.3
 
 ---
 
+<img width="1768" height="976" alt="image" src="https://github.com/user-attachments/assets/6f084f39-5199-4ac4-9d5d-f30773495b20" />
+
+
 ## 📸 Preview
 
 > Upload multiple PDFs → Ask questions across all documents → Get grounded answers with file/page citations streamed instantly.
