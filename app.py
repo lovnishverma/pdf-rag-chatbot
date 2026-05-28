@@ -219,11 +219,18 @@ CSS = """
     .chat-window { height: 60vh !important; }
 }
 
+/* Upload Box - Light & Dark Mode */
 .upload-box { border: 2px dashed #0d9488 !important; border-radius: 8px; background: #f8fafc; }
-.status-box textarea { background: #f0fdf4 !important; color: #064e3b !important; font-size: 0.85rem !important; border: 1.5px solid #0d9488 !important; border-radius: 8px !important; }
+.dark .upload-box { background: #111827 !important; } /* Adapts to Dark Mode */
 
-.process-btn { background: #0d9488 !important; color: white !important; font-weight: 600 !important; }
-.send-btn { background: #0f172a !important; color: white !important; font-weight: 600 !important; }
+/* Status Box - Light & Dark Mode */
+.status-box textarea { background: #f0fdf4 !important; color: #064e3b !important; font-size: 0.85rem !important; border: 1.5px solid #0d9488 !important; border-radius: 8px !important; }
+.dark .status-box textarea { background: #064e3b !important; color: #f0fdf4 !important; } /* Inverts for Dark Mode */
+
+/* Buttons */
+.process-btn { background: #0d9488 !important; color: white !important; font-weight: 600 !important; border: none !important; }
+.send-btn { background: #0f172a !important; color: white !important; font-weight: 600 !important; border: none !important; }
+.dark .send-btn { background: #334155 !important; } /* Lighter button in Dark Mode */
 """
 
 with gr.Blocks(title="📄 Enterprise RAG System", css=CSS, theme=gr.themes.Soft(primary_hue="teal")) as demo:
